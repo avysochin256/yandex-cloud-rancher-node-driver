@@ -51,6 +51,7 @@ If you haven't specified yc-token nor yc-service-account-key-file it will try to
 - `--yandex-platform-id`: ID of the hardware platform configuration
 - `--yandex-preemptible`: Yandex.Cloud Instance preemptibility flag
 - `--yandex-sa-key-file`: Yandex.Cloud Service Account key file
+- `--yandex-sa-key`: Yandex.Cloud Service Account key (inline JSON body, alternative to `--yandex-sa-key-file`)
 - `--yandex-sa-id`: Service account ID to attach to the instance
 - `--yandex-security-groups`: Set security groups
 - `--yandex-ssh-port`: SSH port
@@ -62,6 +63,7 @@ If you haven't specified yc-token nor yc-service-account-key-file it will try to
 - `--yandex-userdata`: Path to file with cloud-init user-data
 - `--yandex-zone`: Yandex.Cloud zone
 - `--yandex-fs`: Filesystem to attach to the instance. Format 'mountPath=FilesystemID'
+- `--yandex-rke2-prep`: Prepare the instance for RKE2: disable swap and open RKE2 ports if ufw is active
 
 #### Environment variables and default values
 
@@ -83,6 +85,7 @@ If you haven't specified yc-token nor yc-service-account-key-file it will try to
 | `--yandex-platform-id`     | YC_PLATFORM_ID       | standard-v1              |
 | `--yandex-preemptible`     | YC_PREEMPTIBLE       | false                    |
 | `--yandex-sa-key-file`     | YC_SA_KEY_FILE       |                          |
+| `--yandex-sa-key`          | YC_SA_KEY            |                          |
 | `--yandex-sa-id`           | YC_SA_ID             |                          |
 | `--yandex-security-groups` | YC_SECURITY_GROUPS   |                          |
 | `--yandex-ssh-port`        | YC_SSH_PORT          | 22                       |
@@ -94,4 +97,37 @@ If you haven't specified yc-token nor yc-service-account-key-file it will try to
 | `--yandex-userdata`        | YC_USERDATA          |                          |
 | `--yandex-zone`            | YC_ZONE              | ru-central1-a            |
 | `--yandex-fs`              | YC_FS                |                          |
+| `--yandex-rke2-prep`       | YC_RKE2_PREP         | false                    |
+
+## Use with Rancher (RKE2 node driver)
+
+This driver can be registered with Rancher 2.13 / 2.14 as a custom node
+driver to provision Yandex.Cloud VMs for RKE2 clusters. A companion
+single-file Ember UI lives in [`ui/component.js`](ui/component.js); it
+renders the form Rancher shows when a user creates a node template.
+
+In the Rancher UI go to **Cluster Management → Drivers → Node Drivers
+→ Add Node Driver** and fill in:
+
+- **Download URL** — the Linux binary from the matching GitHub release,
+  e.g. `https://github.com/yandex-cloud/docker-machine-driver-yandex/releases/download/vX.Y.Z/docker-machine-driver-yandex_X.Y.Z_linux_amd64.tar.gz`
+- **Custom UI URL** — the raw URL of `ui/component.js` at the same tag,
+  e.g. `https://raw.githubusercontent.com/yandex-cloud/docker-machine-driver-yandex/vX.Y.Z/ui/component.js`
+- **Checksum** — paste the matching SHA256 from
+  `docker-machine-driver-yandex_X.Y.Z_SHA256SUMS` (also attached to the
+  release).
+- **Whitelist Domains** — `raw.githubusercontent.com` (or wherever the
+  UI is hosted).
+
+The UI defaults `nat=true` and `rke2Prep=true` so that a newly created
+node is reachable from the Rancher server and that the cloud-init prep
+needed for RKE2 (swap-off and a conditional `ufw allow` block for the
+RKE2 control-plane / agent / NodePort / VXLAN ports) is applied at
+first boot. Both are toggleable in the form.
+
+For credentials, the form offers a radio between an OAuth/IAM token
+and a pasted Service Account Key JSON. The latter is wired to the new
+`--yandex-sa-key` flag, since Rancher cannot stage a file on the
+server-side filesystem for `--yandex-sa-key-file` to read.
+
 ---
