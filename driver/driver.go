@@ -28,6 +28,7 @@ type Driver struct {
 
 	Endpoint              string
 	ServiceAccountKeyFile string
+	ServiceAccountKey     string
 	Token                 string
 
 	CloudID          string
@@ -185,6 +186,11 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			Name:   "yandex-sa-key-file",
 			Usage:  "Yandex.Cloud Service Account key file",
 		},
+		mcnflag.StringFlag{
+			EnvVar: "YC_SA_KEY",
+			Name:   "yandex-sa-key",
+			Usage:  "Yandex.Cloud Service Account key (inline JSON body, alternative to --yandex-sa-key-file)",
+		},
 		mcnflag.IntFlag{
 			EnvVar: "YC_SSH_PORT",
 			Name:   "yandex-ssh-port",
@@ -257,6 +263,7 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 	d.FolderID = flags.String("yandex-folder-id")
 
 	d.ServiceAccountKeyFile = flags.String("yandex-sa-key-file")
+	d.ServiceAccountKey = flags.String("yandex-sa-key")
 	d.Token = flags.String("yandex-token")
 
 	d.Cores = flags.Int("yandex-cores")
@@ -649,14 +656,32 @@ func (d *Driver) prepareUserData(publicKey string) (string, error) {
 }
 
 func (d *Driver) Credentials() (ycsdk.Credentials, error) {
-	if d.ServiceAccountKeyFile != "" && d.Token != "" {
-		return nil, fmt.Errorf("only one of 'token' or 'sa-key-file' should be specified")
+	provided := 0
+	if d.ServiceAccountKeyFile != "" {
+		provided++
+	}
+	if d.ServiceAccountKey != "" {
+		provided++
+	}
+	if d.Token != "" {
+		provided++
+	}
+	if provided > 1 {
+		return nil, fmt.Errorf("only one of 'token', 'sa-key-file', or 'sa-key' should be specified")
 	}
 
 	if d.ServiceAccountKeyFile != "" {
 		key, err := iamkey.ReadFromJSONFile(d.ServiceAccountKeyFile)
 		if err != nil {
 			return nil, err
+		}
+		return ycsdk.ServiceAccountKey(key)
+	}
+
+	if d.ServiceAccountKey != "" {
+		key, err := iamkey.ReadFromJSONBytes([]byte(d.ServiceAccountKey))
+		if err != nil {
+			return nil, fmt.Errorf("invalid 'sa-key' JSON: %s", err)
 		}
 		return ycsdk.ServiceAccountKey(key)
 	}
@@ -672,7 +697,7 @@ func (d *Driver) Credentials() (ycsdk.Credentials, error) {
 		return sa, nil
 	}
 
-	return nil, fmt.Errorf("one of 'token' or 'sa-key-file' should be specified; if you are inside compute instance, you can attach service account to it in order to authenticate via instance service account")
+	return nil, fmt.Errorf("one of 'token', 'sa-key-file', or 'sa-key' should be specified; if you are inside compute instance, you can attach service account to it in order to authenticate via instance service account")
 }
 
 func checkServiceAccountAvailable(ctx context.Context, sa ycsdk.NonExchangeableCredentials) bool {

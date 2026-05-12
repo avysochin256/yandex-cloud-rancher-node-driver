@@ -1,6 +1,7 @@
 package driver
 
 import (
+	"os"
 	"testing"
 
 	"github.com/docker/machine/libmachine/drivers"
@@ -58,6 +59,44 @@ func TestNewYandexCloudClient(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		{
+			name: "inline service account key",
+			args: args{
+				d: &Driver{
+					ServiceAccountKey: mustReadFile("testdata/fake_service_account_key.json"),
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "inline service account key with invalid JSON",
+			args: args{
+				d: &Driver{
+					ServiceAccountKey: "not-json",
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "inline sa-key and token both provided",
+			args: args{
+				d: &Driver{
+					Token:             "some-test-token",
+					ServiceAccountKey: mustReadFile("testdata/fake_service_account_key.json"),
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "sa-key-file and inline sa-key both provided",
+			args: args{
+				d: &Driver{
+					ServiceAccountKeyFile: "testdata/fake_service_account_key.json",
+					ServiceAccountKey:     mustReadFile("testdata/fake_service_account_key.json"),
+				},
+			},
+			wantErr: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -68,6 +107,14 @@ func TestNewYandexCloudClient(t *testing.T) {
 			}
 		})
 	}
+}
+
+func mustReadFile(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		panic(err)
+	}
+	return string(data)
 }
 
 func TestYandexCloudClient_getInstanceIPAddress(t *testing.T) {
