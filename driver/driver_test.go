@@ -14,6 +14,7 @@ func TestDriver_prepareInstanceMetadata(t *testing.T) {
 		SSHUser      string
 		UserDataFile string
 		Filesystems  []string
+		RKE2Prep     bool
 	}
 	tests := []struct {
 		name    string
@@ -89,6 +90,18 @@ runcmd:
 			golden: "user-data_from_file",
 		},
 		{
+			name: "rke2-prep",
+			fields: fields{
+				SSHUser:  "ubuntu",
+				RKE2Prep: true,
+			},
+			wantErr: false,
+			wantMD: map[string]string{
+				"ssh-keys": "ubuntu:" + mockSshPublicKey,
+			},
+			golden: "rke2-prep",
+		},
+		{
 			name: "user-data file does not exist",
 			fields: fields{
 				SSHUser:      "debian",
@@ -106,6 +119,7 @@ runcmd:
 				SSHUser:      tt.fields.SSHUser,
 				UserDataFile: tt.fields.UserDataFile,
 				Filesystems:  tt.fields.Filesystems,
+				RKE2Prep:     tt.fields.RKE2Prep,
 			}
 			e := d.prepareInstanceMetadata(mockSshPublicKey)
 			if tt.wantErr {

@@ -1,0 +1,18 @@
+#cloud-config
+ssh_pwauth: no
+
+users:
+  - name: ubuntu
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    ssh_authorized_keys:
+      - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDkai1XE7djYB5Z
+
+
+runcmd:
+  - swapoff -a
+  - sed -i.bak -e '/\sswap\s/s/^/#/' /etc/fstab
+  - 'if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then for p in 6443 9345 10250 2379 2380; do ufw allow ${p}/tcp; done; ufw allow 30000:32767/tcp; ufw allow 8472/udp; ufw allow 51820/udp; fi'
+
+
+

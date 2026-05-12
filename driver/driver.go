@@ -56,6 +56,7 @@ type Driver struct {
 	SecurityGroups   []string
 	ServiceAccountID string
 	Filesystems      []string
+	RKE2Prep         bool
 }
 
 const (
@@ -243,6 +244,11 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			Name:   "yandex-fs",
 			Usage:  "Filesystem to attach to the instance. Format 'deviceName=FilesystemID'",
 		},
+		mcnflag.BoolFlag{
+			EnvVar: "YC_RKE2_PREP",
+			Name:   "yandex-rke2-prep",
+			Usage:  "Prepare the instance for RKE2: disable swap and open RKE2 ports if ufw is active",
+		},
 	}
 }
 
@@ -276,6 +282,7 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 	d.SecurityGroups = flags.StringSlice("yandex-security-groups")
 	d.ServiceAccountID = flags.String("yandex-sa-id")
 	d.Filesystems = flags.StringSlice("yandex-fs")
+	d.RKE2Prep = flags.Bool("yandex-rke2-prep")
 
 	return nil
 }
@@ -621,7 +628,7 @@ func (d *Driver) prepareInstanceMetadata(publicKey string) error {
 
 func (d *Driver) prepareUserData(publicKey string) (string, error) {
 	filesystems, _ := d.ParseFilesystems()
-	userData, err := defaultUserData(d.GetSSHUsername(), publicKey, filesystems)
+	userData, err := defaultUserData(d.GetSSHUsername(), publicKey, filesystems, d.RKE2Prep)
 	if err != nil {
 		return "", err
 	}
@@ -679,17 +686,19 @@ func checkServiceAccountAvailable(ctx context.Context, sa ycsdk.NonExchangeableC
 	return err == nil
 }
 
-func defaultUserData(sshUserName, sshPublicKey string, fs map[string]map[string]string) (string, error) {
+func defaultUserData(sshUserName, sshPublicKey string, fs map[string]map[string]string, rke2Prep bool) (string, error) {
 	type templateData struct {
 		SSHUserName  string
 		SSHPublicKey string
 		Filesystems  map[string]map[string]string
+		RKE2Prep     bool
 	}
 	buf := &bytes.Buffer{}
 	err := defaultUserDataTemplate.Execute(buf, templateData{
 		SSHUserName:  sshUserName,
 		SSHPublicKey: sshPublicKey,
 		Filesystems:  fs,
+		RKE2Prep:     rke2Prep,
 	})
 	if err != nil {
 		return "", fmt.Errorf("error while process template: %s", err)
@@ -709,8 +718,13 @@ users:
     ssh_authorized_keys:
       - {{.SSHPublicKey}}
 
-{{ if gt (len .Filesystems) 0}}
+{{ if or (gt (len .Filesystems) 0) .RKE2Prep }}
 runcmd:
+{{- if .RKE2Prep }}
+  - swapoff -a
+  - sed -i.bak -e '/\sswap\s/s/^/#/' /etc/fstab
+  - 'if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then for p in 6443 9345 10250 2379 2380; do ufw allow ${p}/tcp; done; ufw allow 30000:32767/tcp; ufw allow 8472/udp; ufw allow 51820/udp; fi'
+{{ end }}
 {{range $name, $fs := .Filesystems}}
   - mkdir {{index $fs "filesystemPath"}}
   - mount -t virtiofs {{ $name }} {{index $fs "filesystemPath"}}
