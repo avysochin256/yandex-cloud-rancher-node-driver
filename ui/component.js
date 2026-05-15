@@ -85,7 +85,14 @@
           // RKE2 prep — DECISIONS.md Q4 Sub-A.2: checkbox in Advanced,
           // default checked. Driver-side flag is opt-in; the UI flips
           // it on so the default Rancher RKE2 path "just works".
-          rke2Prep: true
+          rke2Prep: true,
+
+          // RKE2 suppress external IP — DECISIONS.md Q5: default on
+          // so Rancher's RKE2 planner doesn't promote the public NAT
+          // IP into --node-external-ip (which would make kube-apiserver
+          // advertise the un-hairpinnable public IP). Toggleable for
+          // non-RKE2 use cases.
+          rke2SuppressExternalIp: true
         });
 
         set(this, 'model.yandexConfig', config);
@@ -338,6 +345,16 @@
       '          Prepare the instance for RKE2 (disable swap; open RKE2 ports if ufw is active)\n' +
       '        </label>\n' +
       '        <p class="help-block">Leave on for any node Rancher will turn into an RKE2 server or agent. Off for non-RKE2 use.</p>\n' +
+      '      </div>\n' +
+      '    </div>\n' +
+      '\n' +
+      '    <div class="row">\n' +
+      '      <div class="col span-12">\n' +
+      '        <label class="checkbox">\n' +
+      '          {{input type="checkbox" checked=config.rke2SuppressExternalIp}}\n' +
+      '          Hide external (NAT) IP from RKE2 (avoid public --node-external-ip)\n' +
+      '        </label>\n' +
+      '        <p class="help-block">Stops Rancher\'s RKE2 planner from passing the public NAT IP into <code>--node-external-ip</code>, so kube-apiserver advertises the internal IP. SSH-from-Rancher still uses the public IP. Off for non-RKE2 use.</p>\n' +
       '      </div>\n' +
       '    </div>\n' +
       '\n' +

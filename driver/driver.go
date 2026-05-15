@@ -58,6 +58,29 @@ type Driver struct {
 	ServiceAccountID string
 	Filesystems      []string
 	RKE2Prep         bool
+
+	// RKE2SuppressExternalIP, when true, hides the instance's external
+	// (NAT) IPv4 address from Rancher's RKE2 planner so it isn't
+	// propagated into the node's --node-external-ip RKE2 flag.
+	// Rancher's planner reads BaseDriver.IPAddress as the external
+	// address and PrivateIPAddress as the internal address; with this
+	// flag set, IPAddress is forced to the internal value while
+	// GetSSHHostname continues to return the public NAT IP so
+	// SSH-from-Rancher (across a VPC boundary) still works.
+	RKE2SuppressExternalIP bool
+
+	// PrivateIPAddress is the instance's internal IPv4 address.
+	// Exposed as a top-level JSON field on the marshaled driver state
+	// so Rancher's planner can read it as the node's internal address
+	// (rke.cattle.io planner: Driver.PrivateIPAddress → InternalAddresses).
+	PrivateIPAddress string
+
+	// ExternalIPAddress is the instance's external (NAT) IPv4 address,
+	// populated when Nat is true. Held as a driver-private field so it
+	// is available for SSH-from-Rancher when RKE2SuppressExternalIP is
+	// set, without being read by Rancher's planner (which only
+	// inspects IPAddress / PrivateIPAddress / IPv6Address).
+	ExternalIPAddress string
 }
 
 const (
@@ -255,6 +278,11 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			Name:   "yandex-rke2-prep",
 			Usage:  "Prepare the instance for RKE2: disable swap and open RKE2 ports if ufw is active",
 		},
+		mcnflag.BoolFlag{
+			EnvVar: "YC_RKE2_SUPPRESS_EXTERNAL_IP",
+			Name:   "yandex-rke2-suppress-external-ip",
+			Usage:  "Hide the external (NAT) IP from Rancher's RKE2 planner so it isn't propagated to --node-external-ip (avoids kube-apiserver advertising the public IP)",
+		},
 	}
 }
 
@@ -290,6 +318,7 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 	d.ServiceAccountID = flags.String("yandex-sa-id")
 	d.Filesystems = flags.StringSlice("yandex-fs")
 	d.RKE2Prep = flags.Bool("yandex-rke2-prep")
+	d.RKE2SuppressExternalIP = flags.Bool("yandex-rke2-suppress-external-ip")
 
 	return nil
 }
@@ -387,8 +416,17 @@ func (d *Driver) Create() error {
 	return nil
 }
 
-// GetSSHHostname returns hostname for use with ssh
+// GetSSHHostname returns hostname for use with ssh.
+//
+// When RKE2SuppressExternalIP is set, Driver.IPAddress is forced to the
+// internal IP so Rancher's RKE2 planner doesn't promote the NAT IP into
+// --node-external-ip; SSH-from-Rancher still needs the public NAT IP to
+// cross a VPC boundary, so we prefer ExternalIPAddress here when it's
+// populated. Falls back to GetIP() otherwise.
 func (d *Driver) GetSSHHostname() (string, error) {
+	if d.RKE2SuppressExternalIP && d.ExternalIPAddress != "" {
+		return d.ExternalIPAddress, nil
+	}
 	return d.GetIP()
 }
 

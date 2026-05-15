@@ -123,10 +123,12 @@ func TestYandexCloudClient_getInstanceIPAddress(t *testing.T) {
 		instance *compute.Instance
 	}
 	tests := []struct {
-		name        string
-		args        args
-		wantAddress string
-		wantErr     bool
+		name                  string
+		args                  args
+		wantAddress           string
+		wantErr               bool
+		wantPrivateIPAddress  string
+		wantExternalIPAddress string
 	}{
 		{
 			name: "instance with both addresses, want internal address",
@@ -152,8 +154,10 @@ func TestYandexCloudClient_getInstanceIPAddress(t *testing.T) {
 					},
 				},
 			},
-			wantAddress: "192.168.19.86",
-			wantErr:     false,
+			wantAddress:           "192.168.19.86",
+			wantErr:               false,
+			wantPrivateIPAddress:  "192.168.19.86",
+			wantExternalIPAddress: "92.68.12.34",
 		},
 		{
 			name: "instance with both addresses, want external address",
@@ -179,8 +183,10 @@ func TestYandexCloudClient_getInstanceIPAddress(t *testing.T) {
 					},
 				},
 			},
-			wantAddress: "92.68.12.34",
-			wantErr:     false,
+			wantAddress:           "92.68.12.34",
+			wantErr:               false,
+			wantPrivateIPAddress:  "192.168.19.86",
+			wantExternalIPAddress: "92.68.12.34",
 		},
 		{
 			name: "instance with internal address, want external address",
@@ -202,8 +208,39 @@ func TestYandexCloudClient_getInstanceIPAddress(t *testing.T) {
 					},
 				},
 			},
-			wantAddress: "",
-			wantErr:     true,
+			wantAddress:          "",
+			wantErr:              true,
+			wantPrivateIPAddress: "192.168.19.86",
+		},
+		{
+			name: "nat + suppress-external-ip yields internal address",
+			args: args{
+				d: &Driver{
+					UseIPv6:                false,
+					UseInternalIP:          false,
+					RKE2SuppressExternalIP: true,
+				},
+				instance: &compute.Instance{
+					NetworkInterfaces: []*compute.NetworkInterface{
+						{
+							Index: "1",
+							PrimaryV4Address: &compute.PrimaryAddress{
+								Address: "10.128.0.26",
+								OneToOneNat: &compute.OneToOneNat{
+									Address:   "92.68.12.34",
+									IpVersion: compute.IpVersion_IPV4,
+								},
+							},
+							SubnetId:   "some-subnet-id",
+							MacAddress: "aa-bb-cc-dd-ee-ff",
+						},
+					},
+				},
+			},
+			wantAddress:           "10.128.0.26",
+			wantErr:               false,
+			wantPrivateIPAddress:  "10.128.0.26",
+			wantExternalIPAddress: "92.68.12.34",
 		},
 	}
 	for _, tt := range tests {
@@ -216,6 +253,58 @@ func TestYandexCloudClient_getInstanceIPAddress(t *testing.T) {
 			}
 			if gotAddress != tt.wantAddress {
 				t.Errorf("YCClient.getInstanceIPAddress() = %v, want %v", gotAddress, tt.wantAddress)
+			}
+			if tt.args.d.PrivateIPAddress != tt.wantPrivateIPAddress {
+				t.Errorf("Driver.PrivateIPAddress = %q, want %q", tt.args.d.PrivateIPAddress, tt.wantPrivateIPAddress)
+			}
+			if tt.args.d.ExternalIPAddress != tt.wantExternalIPAddress {
+				t.Errorf("Driver.ExternalIPAddress = %q, want %q", tt.args.d.ExternalIPAddress, tt.wantExternalIPAddress)
+			}
+		})
+	}
+}
+
+func TestDriver_GetSSHHostname(t *testing.T) {
+	tests := []struct {
+		name    string
+		d       *Driver
+		want    string
+		wantErr bool
+	}{
+		{
+			name: "suppress flag uses external IP for SSH",
+			d: &Driver{
+				BaseDriver:             &drivers.BaseDriver{IPAddress: "10.128.0.26"},
+				RKE2SuppressExternalIP: true,
+				ExternalIPAddress:      "92.68.12.34",
+			},
+			want: "92.68.12.34",
+		},
+		{
+			name: "suppress flag without external IP falls back to IPAddress",
+			d: &Driver{
+				BaseDriver:             &drivers.BaseDriver{IPAddress: "10.128.0.26"},
+				RKE2SuppressExternalIP: true,
+			},
+			want: "10.128.0.26",
+		},
+		{
+			name: "no suppress flag returns IPAddress",
+			d: &Driver{
+				BaseDriver:        &drivers.BaseDriver{IPAddress: "92.68.12.34"},
+				ExternalIPAddress: "92.68.12.34",
+			},
+			want: "92.68.12.34",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := tt.d.GetSSHHostname()
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("GetSSHHostname() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if got != tt.want {
+				t.Errorf("GetSSHHostname() = %q, want %q", got, tt.want)
 			}
 		})
 	}

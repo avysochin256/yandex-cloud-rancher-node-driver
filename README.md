@@ -64,6 +64,7 @@ If you haven't specified yc-token nor yc-service-account-key-file it will try to
 - `--yandex-zone`: Yandex.Cloud zone
 - `--yandex-fs`: Filesystem to attach to the instance. Format 'mountPath=FilesystemID'
 - `--yandex-rke2-prep`: Prepare the instance for RKE2: disable swap and open RKE2 ports if ufw is active
+- `--yandex-rke2-suppress-external-ip`: Hide the external (NAT) IP from Rancher's RKE2 planner so it isn't propagated to `--node-external-ip` (avoids kube-apiserver advertising the public IP)
 
 #### Environment variables and default values
 
@@ -98,6 +99,7 @@ If you haven't specified yc-token nor yc-service-account-key-file it will try to
 | `--yandex-zone`            | YC_ZONE              | ru-central1-a            |
 | `--yandex-fs`              | YC_FS                |                          |
 | `--yandex-rke2-prep`       | YC_RKE2_PREP         | false                    |
+| `--yandex-rke2-suppress-external-ip` | YC_RKE2_SUPPRESS_EXTERNAL_IP | false            |
 
 ## Use with Rancher (RKE2 node driver)
 
@@ -119,11 +121,14 @@ In the Rancher UI go to **Cluster Management → Drivers → Node Drivers
 - **Whitelist Domains** — `raw.githubusercontent.com` (or wherever the
   UI is hosted).
 
-The UI defaults `nat=true` and `rke2Prep=true` so that a newly created
-node is reachable from the Rancher server and that the cloud-init prep
-needed for RKE2 (swap-off and a conditional `ufw allow` block for the
-RKE2 control-plane / agent / NodePort / VXLAN ports) is applied at
-first boot. Both are toggleable in the form.
+The UI defaults `nat=true`, `rke2Prep=true`, and
+`rke2SuppressExternalIp=true` so that a newly created node is reachable
+from the Rancher server, the cloud-init prep needed for RKE2 (swap-off
+and a conditional `ufw allow` block for the RKE2 control-plane / agent
+/ NodePort / VXLAN ports) is applied at first boot, and Rancher's RKE2
+planner doesn't propagate the public NAT IP into `--node-external-ip`
+(which would otherwise make `kube-apiserver` advertise the
+un-hairpinnable public IP). All three are toggleable in the form.
 
 For credentials, the form offers a radio between an OAuth/IAM token
 and a pasted Service Account Key JSON. The latter is wired to the new

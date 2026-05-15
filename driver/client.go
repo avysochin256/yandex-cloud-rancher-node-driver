@@ -218,6 +218,14 @@ func (c *YCClient) getInstanceIPAddress(d *Driver, instance *compute.Instance) (
 		return "", err
 	}
 
+	// Always record both v4 addresses on the Driver struct so they
+	// survive JSON round-trip through the docker-machine state file.
+	// Rancher's RKE2 planner reads Driver.PrivateIPAddress from that
+	// state as the node's internal address; ExternalIPAddress is held
+	// for the SSH path in GetSSHHostname.
+	d.PrivateIPAddress = addrIPV4Internal
+	d.ExternalIPAddress = addrIPV4External
+
 	if d.UseIPv6 {
 		if addrIPV6Addr != "" {
 			return "[" + addrIPV6Addr + "]", nil
@@ -231,6 +239,21 @@ func (c *YCClient) getInstanceIPAddress(d *Driver, instance *compute.Instance) (
 		}
 		return "", errors.New("instance has no one IPv4 internal address")
 	}
+
+	// Rancher's RKE2 planner promotes Driver.IPAddress into
+	// --node-external-ip, which then makes kube-apiserver advertise
+	// the public NAT IP — and YC's egress NAT doesn't hairpin, so the
+	// in-cluster kubernetes Service Endpoint becomes unreachable. When
+	// the suppression flag is on we force IPAddress to the internal
+	// value; GetSSHHostname still returns ExternalIPAddress so Rancher
+	// can reach the node over the public IP.
+	if d.RKE2SuppressExternalIP {
+		if addrIPV4Internal != "" {
+			return addrIPV4Internal, nil
+		}
+		return "", errors.New("instance has no one IPv4 internal address")
+	}
+
 	if addrIPV4External != "" {
 		return addrIPV4External, nil
 	}
