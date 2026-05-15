@@ -29,11 +29,11 @@ builds:
         goarch: arm64
     binary: '{{ .ProjectName }}'
 archives:
-  - format: tar.gz # default
+  - formats: [tar.gz]
     name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
     format_overrides:
       - goos: windows
-        format: zip
+        formats: [zip]
 checksum:
   name_template: '{{ .ProjectName }}_{{ .Version }}_SHA256SUMS'
   algorithm: sha256
